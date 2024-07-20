@@ -1,1 +1,5 @@
 .env 
+utils/ #until it is completed
+data/ 
+cogs/helpCogs.py
+__pycache__/
