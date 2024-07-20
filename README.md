@@ -1,0 +1,2 @@
+# Viorel/writer-and-reader-discord-bot
+ **Viorel** is a versatile Discord bot designed to enhance your server experience. Whether you're a writer looking for specialized tools or a reader seeking unique commands, **Viorel** has you covered. It also takes on moderation and server management responsibilities to keep your community running smoothly. While the bot doesn't support music yet, it continues to evolve with new features. Stay tuned for more updates!
