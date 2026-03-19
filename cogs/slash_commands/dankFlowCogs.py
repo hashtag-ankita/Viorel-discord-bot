@@ -30,7 +30,6 @@ class StartFLowButton(discord.ui.Button):
             view=FlowControlView(self.cog, user_id=user_id)
         )
 
-
 class EndFlowButton(discord.ui.Button):
     def __init__(self, cog):
         super().__init__(label="End Flow", style=discord.ButtonStyle.danger)
@@ -62,7 +61,6 @@ class FlowControlView(discord.ui.View):
         else:
             self.add_item(StartFLowButton(cog))
 
-
 class DankFlowCogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -88,10 +86,10 @@ class DankFlowCogs(commands.Cog):
         }
 
         self.command_delays = {
-            "crime": 2,
-            "postmemes": 2,
-            "tidy": 2,
-            "search": 2
+            "crime": 0,
+            "postmemes": 0,
+            "tidy": 0,
+            "search": 0
         }
 
         self.active_flows = {}
@@ -140,7 +138,16 @@ class DankFlowCogs(commands.Cog):
         cmd = self.flow_order[index]
         cmd_id = self.command_ids[cmd]
 
-        msg = await channel.send(f"</{cmd}:{cmd_id}>")
+        # * to get the commands as embed
+        embed = discord.Embed(
+            title=f"</{cmd}:{cmd_id}>",
+            color=discord.Color.green()
+        )
+
+        msg = await channel.send(embed=embed)
+
+        # # * to get the commands as normal message
+        # msg = await channel.send(f"</{cmd}:{cmd_id}>")
 
         flow["message_id"] = msg.id
 
@@ -155,10 +162,10 @@ class DankFlowCogs(commands.Cog):
         if message.author.id != DANK_ID:
             return
         
-        if not message.interaction:
+        if not message.interaction_metadata:
             return
         
-        user_id = message.interaction.user.id
+        user_id = message.interaction_metadata.user.id
 
         if user_id not in self.active_flows:
             return
@@ -187,7 +194,6 @@ class DankFlowCogs(commands.Cog):
             await asyncio.sleep(delay)
 
         await self.send_next_command(message, user_id=user_id)
-
 
 async def setup(bot):
     await bot.add_cog(DankFlowCogs(bot))
