@@ -39,9 +39,11 @@ class DurationTransformer(app_commands.Transformer):
 class CancelTimerButton(discord.ui.Button):
     def __init__(self, timer_task):
         super().__init__(
-            # label="",
             style=discord.ButtonStyle.secondary,
-            emoji="<:purple_cross:1148524488875585608>"
+            emoji=discord.PartialEmoji(
+                name="purple_cross",
+                id=1148524488875585608
+            )
         )
         self.timer_task = timer_task
 
@@ -49,13 +51,17 @@ class CancelTimerButton(discord.ui.Button):
         if interaction.user != self.timer_task.user:
             await interaction.response.send_message("This is not your timer.", ephemeral=True)
             return
+        
+        success, msg = await self.timer_task.cancel(interaction.user)
 
-        if self.timer_task and not self.timer_task.done():
-            self.timer_task.cancel()
-            await interaction.response.send_message("Timer cancelled successfully.", ephemeral=True)
+        await interaction.response.send_message(msg, ephemeral=True)
 
-        else:
-            await interaction.response.send_message("Timer has already ended or was not found.", ephemeral=True)
+        # if self.timer_task and not self.timer_task.done():
+        #     self.timer_task.cancel()
+        #     await interaction.response.send_message("Timer cancelled successfully.", ephemeral=True)
+
+        # else:
+        #     await interaction.response.send_message("Timer has already ended or was not found.", ephemeral=True)
 
 
 class RemindMeTooButton(discord.ui.Button):
@@ -69,21 +75,25 @@ class RemindMeTooButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user == self.timer_task.user:
-            await interaction.response.send_message("You are already the one who set this timer.", ephemeral=True)
+            await interaction.response.send_message("You are the one who set this timer.", ephemeral=True)
             return
         
-        if self.timer_task and not self.timer_task.done():
-            # logic to add the user to the reminder list and send them a DM when the timer ends
-            self.timer_task.add_reminder_user(interaction.user)
-            await interaction.response.send_message("You will be reminded when the timer ends.", ephemeral=True)
-        else:
-            await interaction.response.send_message("Timer has already ended or was not found.", ephemeral=True)
+        success, msg = self.timer_task.join(interaction.user)
+        await interaction.response.send_message(msg, ephemeral=True)
+        
+        # if self.timer_task and self.timer_task.is_active():
+        #     # logic to add the user to the reminder list and send them a DM when the timer ends
+        #     self.timer_task.add_reminder_user(interaction.user)
+        #     await interaction.response.send_message("You will be reminded when the timer ends.", ephemeral=True)
+        # else:
+        #     await interaction.response.send_message("Timer has already ended or was not found.", ephemeral=True)
 
 
 class StartTimerView(discord.ui.View):
     def __init__(self, timer_task):
         super().__init__(timeout=None)
         self.timer_task = timer_task
+
         self.add_item(CancelTimerButton(timer_task))
         self.add_item(RemindMeTooButton(timer_task))
     
@@ -91,7 +101,7 @@ class StartTimerView(discord.ui.View):
         '''
         When the view times out, we can perform any necessary cleanup here.
         '''
-        if self.timer_task and not self.timer_task.done():
+        if self.timer_task and self.timer_task.is_active():
             self.timer_task.cancel()
             await self.timer_task.channel.send("Timer cancelled due to timeout.")
         else:
@@ -101,7 +111,7 @@ class StartTimerView(discord.ui.View):
 
 
 class TimerTask:
-    def __init__(self, cog, user, duration, reminder, channel, start_msg_url, send_in_channel=True):
+    def __init__(self, cog, user, duration, reminder, channel, start_msg_url :str = "None", send_in_channel=True):
         self.cog = cog
         self.user = user
         self.user_id = user.id
@@ -137,33 +147,17 @@ class TimerTask:
         self.task = asyncio.create_task(self._run())
     
     async def _run(self):
-        try:
-            print(f"[TIMER] Started for {self.duration}s") # ! to debug
-
-            await asyncio.sleep(self.duration)
-
-            print("[TIMER] Woke up, finishing...") # ! to debug
-
-            await self.finish()
-
-        except Exception as e:
-            print(f"[TIMER ERROR] {e}")
-        # await asyncio.sleep(self.duration)
-        # await self.finish()
+        await asyncio.sleep(self.duration)
+        await self.finish()
 
     async def finish(self):
         if not self.active:
-            # ! to debug
-            print(f"Timer for user {self.user_id} already inactive. Skipping reminder.")
             return
         
-        # ! to debug
-        print(f"Timer for user {self.user_id} finished. Sending reminder.")
         self.active = False
 
         await self.send_reminder()
-        # ! to debug
-        print(f"Reminder sent for user {self.user_id}. Cleaning up timer.")
+       
         self.cog.manager.remove_timer(self.user_id, self)
 
     
@@ -188,7 +182,7 @@ class TimerTask:
         return embed
 
     async def send_reminder(self):
-        # users = [self.user] + list(self.joined_users)
+        users = [self.user] + list(self.joined_users)
 
         fun_messages = [
             "Tons of timer but still not on time, tsk tsk!", 
@@ -212,30 +206,65 @@ class TimerTask:
             footer_text=random.choice(fun_messages)
         )
 
-        # for u in users:
+
+        # * CHANNEL MODE (single message)
         if self.send_in_channel:
+            mentions = " ".join(u.mention for u in users)
+
             await self.channel.send(
-                content=self.user.mention,
+                content=mentions,
                 embed=embed,
                 view=view
             )
+
+        # * DM MODE (individual)
         else:
-            try:
-                if self.user.dm_channel is None:
-                    await self.user.create_dm()
+            failed_users = []
 
-                await self.user.dm_channel.send(
-                    embed=embed,
-                    view=view
-                )
+            for u in users:
+                try:
+                    if u.dm_channel is None:
+                        await u.create_dm()
 
-            except:
-                # fallback to channel
+                    await u.dm_channel.send(embed=embed, view=view)
+
+                except:
+                    failed_users.append(u)
+
+            # fallback message in channel if needed
+            if failed_users:
+                mentions = " ".join(u.mention for u in failed_users)
+
                 await self.channel.send(
-                    content=f"{self.user.mention} (Couldn't DM you)",
+                    content=f"{mentions} (Couldn't DM you)",
                     embed=embed,
                     view=view
                 )
+
+        # for u in users:
+        #     if self.send_in_channel:
+        #         await self.channel.send(
+        #             content=u.mention,
+        #             embed=embed,
+        #             view=view
+        #         )
+        #     else:
+        #         try:
+        #             if u.dm_channel is None:
+        #                 await u.create_dm()
+
+        #             await u.dm_channel.send(
+        #                 embed=embed,
+        #                 view=view
+        #             )
+
+        #         except:
+        #             # fallback to channel
+        #             await self.channel.send(
+        #                 content=f"{u.mention} (Couldn't DM you)",
+        #                 embed=embed,
+        #                 view=view
+        #             )
 
     # ! TODO: check chatgpt for rest of the code and change parts of it as per the need - 20.03.2026
 

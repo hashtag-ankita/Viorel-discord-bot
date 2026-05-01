@@ -42,9 +42,7 @@ class TimerCommandsCog(commands.Cog):
         )
 
         # send initial response
-        await interaction.response.send_message(embed=confirm_embed)
-
-        start_msg = await interaction.original_response()
+        # await interaction.response.send_message(embed=confirm_embed, view=StartTimerView(timer_task=None))
 
         # create timer object
         timer = TimerTask(
@@ -53,9 +51,14 @@ class TimerCommandsCog(commands.Cog):
             duration=duration,
             reminder=reminder,
             channel=interaction.channel,
-            start_msg_url=start_msg.jump_url,
             send_in_channel=channel # store the channel preference in the timer task
         )
+
+        await interaction.response.send_message(embed=confirm_embed, view=StartTimerView(timer_task=timer))
+
+        start_msg = await interaction.original_response()
+
+        timer.start_msg_url = start_msg.jump_url
 
         self.manager.add_timer(interaction.user.id, timer)
 
