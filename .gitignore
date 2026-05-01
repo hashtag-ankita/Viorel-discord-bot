@@ -4,3 +4,5 @@ secrets.json
 /.vscode
 /data
 *.pyc
+tempCodeRunnerFile.py
+__pycache__
