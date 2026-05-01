@@ -6,13 +6,6 @@ import asyncio
 import random
 from datetime import datetime, timedelta
 
-# class CancelTimerButton(discord.ui.Button):
-#     def __init__(self, timer_task):
-#         super().__init__(label="<a:purplecross:1148524488875585608>", style=discord.ButtonStyle.danger)
-#         self.timer_task = timer_task
-    
-#     async def callback(self, interaction: discord.)
-
 class DurationTransformer(app_commands.Transformer):
     async def transform(self, interaction: discord.Interaction, value: str) -> int:
         '''
@@ -23,14 +16,22 @@ class DurationTransformer(app_commands.Transformer):
         try:
             unit = value[-1]
             amount = int(value[:-1])
-            seconds = amount * unit_map.get(unit, 1)
-        except (ValueError, KeyError):
-            raise app_commands.AppCommandError("Invalid duration format.")
+            seconds = amount * unit_map[unit]
+        except (ValueError, KeyError, IndexError):
+            raise app_commands.AppCommandError(
+                "Invalid duration format. Use formats like '10s', '5m', or '2h'."
+            )
         
+        # * Bounds check        
         if seconds < 10:
-            raise app_commands.AppCommandError("Minimum duration is 10 seconds.")
+            raise app_commands.AppCommandError(
+                "Timer must be at least 10 seconds."
+            )
+            
         if seconds > 24 * 3600:
-            raise app_commands.AppCommandError("Maximum duration is 24 hours.")
+            raise app_commands.AppCommandError(
+                "Timer cannot be longer than 24 hours."
+            )
         
         return seconds
 
@@ -100,7 +101,7 @@ class StartTimerView(discord.ui.View):
 
 
 class TimerTask:
-    def __init__(self, cog, user, duration, reminder, channel, start_msg_url):
+    def __init__(self, cog, user, duration, reminder, channel, start_msg_url, send_in_channel=True):
         self.cog = cog
         self.user = user
         self.user_id = user.id
@@ -108,6 +109,7 @@ class TimerTask:
         self.duration = duration
         self.reminder = reminder
         self.channel = channel
+        self.send_in_channel = send_in_channel
 
         self.start_time = int(time.time())
         self.end_time = self.start_time + duration
@@ -135,31 +137,105 @@ class TimerTask:
         self.task = asyncio.create_task(self._run())
     
     async def _run(self):
-        await asyncio.sleep(self.duration)
-        await self.finish()
+        try:
+            print(f"[TIMER] Started for {self.duration}s") # ! to debug
+
+            await asyncio.sleep(self.duration)
+
+            print("[TIMER] Woke up, finishing...") # ! to debug
+
+            await self.finish()
+
+        except Exception as e:
+            print(f"[TIMER ERROR] {e}")
+        # await asyncio.sleep(self.duration)
+        # await self.finish()
 
     async def finish(self):
         if not self.active:
+            # ! to debug
+            print(f"Timer for user {self.user_id} already inactive. Skipping reminder.")
             return
         
+        # ! to debug
+        print(f"Timer for user {self.user_id} finished. Sending reminder.")
         self.active = False
 
         await self.send_reminder()
+        # ! to debug
+        print(f"Reminder sent for user {self.user_id}. Cleaning up timer.")
         self.cog.manager.remove_timer(self.user_id, self)
 
+    
+    def build_timer_embed(self, reminder, start_time, footer_text):
+        '''
+        Helper function to build the timer end embed with the reminder message, start time, and footer text.
+        '''
+        embed = discord.Embed(
+            title="<a:purpletick:1148523911634497616> Timer Ended!",
+            description=f"<:purple_dot:1167142077281353799> **Your reminder message:**\n{reminder}",
+            color=discord.Color.green()
+        )
+
+        embed.set_footer(text=footer_text)
+        embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1250019842329808916.webp?size=128&animated=true")
+
+        embed.add_field(
+            name="Started at",
+            value=f"<t:{int(start_time)}:f>",
+            inline=False
+        )
+        return embed
+
     async def send_reminder(self):
-        users = [self.user] + list(self.joined_users)
+        # users = [self.user] + list(self.joined_users)
 
-        for u in users:
+        fun_messages = [
+            "Tons of timer but still not on time, tsk tsk!", 
+            "Time flies when you're having fun, but don't forget to set your timer!", 
+            "Ding dong! Time's up! Hope you had a productive time!", 
+            "Timers can't fix what your mentality couldn't. Be better! Set that timer and get to work!", 
+            "Time is money, but you can set a timer for free! What are you waiting for?"
+        ]
+
+        view = discord.ui.View()
+        view.add_item(
+            discord.ui.Button(
+                label="Jump to Timer Start",
+                url=self.start_msg_url
+            )
+        )
+
+        embed = self.build_timer_embed(
+            reminder=self.reminder,
+            start_time=self.start_time,
+            footer_text=random.choice(fun_messages)
+        )
+
+        # for u in users:
+        if self.send_in_channel:
+            await self.channel.send(
+                content=self.user.mention,
+                embed=embed,
+                view=view
+            )
+        else:
             try:
-                if u.dm_channel is None:
-                    await u.create_dm()
+                if self.user.dm_channel is None:
+                    await self.user.create_dm()
 
-                await u.dm_channel.send(
-                    f"⏰ Timer ended!\n{self.reminder}\n🔗 {self.start_msg_url}"
+                await self.user.dm_channel.send(
+                    embed=embed,
+                    view=view
                 )
+
             except:
-                pass
+                # fallback to channel
+                await self.channel.send(
+                    content=f"{self.user.mention} (Couldn't DM you)",
+                    embed=embed,
+                    view=view
+                )
 
     # ! TODO: check chatgpt for rest of the code and change parts of it as per the need - 20.03.2026
 
