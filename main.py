@@ -12,7 +12,7 @@ class Client(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=commands.when_mentioned_or('v!'), intents=discord.Intents().all())
 
-        self.cogsList = []
+        self.cogsList = ["cogs.slash_commands.dankReminderCommandsCog"]
         self.status_messages = [
             {"type": discord.ActivityType.playing, "message": "epic tales and managing server drama"},
             {"type": discord.ActivityType.playing, "message": "and breaking things, one command at a time"},
